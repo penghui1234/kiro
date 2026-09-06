@@ -98,9 +98,11 @@ class FakeReportService:
             message="尚未配置 Kiro User Activity Reports 的 S3 桶。",
         )
         self.calls = 0
+        self.months: list[str | None] = []
 
-    async def load_latest(self) -> MonthlyReport:
+    async def load_latest(self, month: str | None = None) -> MonthlyReport:
         self.calls += 1
+        self.months.append(month)
         return self.report
 
 

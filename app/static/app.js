@@ -11,7 +11,12 @@ const state = {
   loaded: { overview: false, users: false, subscriptions: false },
   updatedAt: { overview: null, users: null, subscriptions: null },
   reportLoaded: false,
+  reportLoadedFor: null,
   reportLoading: null,
+  reportLoadingFor: null,
+  reportMonth: null,
+  reportRequestId: 0,
+  reportController: null,
 }
 const $ = (selector) => document.querySelector(selector)
 const $$ = (selector) => [...document.querySelectorAll(selector)]
@@ -82,26 +87,72 @@ function invalidateView(view) {
   state.loaded[view] = false
 }
 
-async function loadMonthlyReport({ force = false } = {}) {
-  if (state.reportLoaded && !force) return
-  if (state.reportLoading) return state.reportLoading
-  state.reportLoading = (async () => {
-    const response = await fetch('/api/reports/monthly/view', {
+function setMonthlyReportBusy(busy) {
+  $('#monthly-report-month').disabled = busy
+  $('#view-monthly-report').disabled = busy
+  $('#latest-monthly-report').disabled = busy
+}
+
+function setMonthlyReportMode(month, actualPeriod = null) {
+  const mode = $('#monthly-report-mode')
+  if (month) {
+    mode.textContent = `当前月份：${actualPeriod || month}`
+  } else {
+    mode.textContent = actualPeriod ? `当前：最新月份（${actualPeriod}）` : '当前：最新月份'
+  }
+}
+
+async function loadMonthlyReport({ force = false, month = state.reportMonth } = {}) {
+  const requestedMonth = month || null
+  const requestKey = requestedMonth || 'latest'
+  if (state.reportLoaded && state.reportLoadedFor === requestKey && !force) return
+  if (state.reportLoading && state.reportLoadingFor === requestKey && !force) {
+    return state.reportLoading
+  }
+
+  state.reportController?.abort()
+  const controller = new AbortController()
+  const requestId = state.reportRequestId + 1
+  state.reportRequestId = requestId
+  state.reportController = controller
+  state.reportLoadingFor = requestKey
+  setMonthlyReportBusy(true)
+  setMonthlyReportMode(requestedMonth)
+
+  const loading = (async () => {
+    const query = requestedMonth ? `?month=${encodeURIComponent(requestedMonth)}` : ''
+    const response = await fetch(`/api/reports/monthly/view${query}`, {
       credentials: 'same-origin',
       cache: 'no-store',
+      signal: controller.signal,
     })
     if (!response.ok) {
       if (response.status === 401) showLogin()
       throw new Error(`月度报告加载失败 (${response.status})`)
     }
-    $('#monthly-report-host').innerHTML = await response.text()
+    const html = await response.text()
+    if (requestId !== state.reportRequestId) return
+    const host = $('#monthly-report-host')
+    host.innerHTML = html
     if (typeof window.initMonthlyReport === 'function') window.initMonthlyReport()
+    const actualPeriod = host.querySelector('.monthly-report')?.dataset.period || requestedMonth
+    if (actualPeriod) $('#monthly-report-month').value = actualPeriod
     state.reportLoaded = true
+    state.reportLoadedFor = requestKey
+    setMonthlyReportMode(requestedMonth, actualPeriod)
   })()
+  state.reportLoading = loading
   try {
-    await state.reportLoading
+    await loading
+  } catch (error) {
+    if (error.name !== 'AbortError') throw error
   } finally {
-    state.reportLoading = null
+    if (requestId === state.reportRequestId) {
+      state.reportLoading = null
+      state.reportLoadingFor = null
+      state.reportController = null
+      setMonthlyReportBusy(false)
+    }
   }
 }
 
@@ -442,6 +493,18 @@ $('#logout-button').addEventListener('click', async () => {
   try { await api('/api/logout', { method: 'POST' }) } finally { showLogin() }
 })
 $('#refresh-overview').addEventListener('click', () => loadOverview({ force: true }))
+$('#view-monthly-report').addEventListener('click', async () => {
+  const month = $('#monthly-report-month').value
+  if (!month) return showError(new Error('请选择报告月份'))
+  state.reportMonth = month
+  try { await loadMonthlyReport({ force: true, month }) }
+  catch (error) { showError(error) }
+})
+$('#latest-monthly-report').addEventListener('click', async () => {
+  state.reportMonth = null
+  try { await loadMonthlyReport({ force: true, month: null }) }
+  catch (error) { showError(error) }
+})
 $('#refresh-users').addEventListener('click', () => loadUsers({ force: true }))
 $('#refresh-subscriptions').addEventListener('click', () => loadSubscriptions({ force: true }))
 $('#search-users').addEventListener('click', () => loadUsers({ force: true }))

@@ -17,7 +17,7 @@ def test_login_script_keeps_form_reference_across_await(client: TestClient) -> N
     index = client.get("/")
     script = client.get("/static/app.js")
 
-    assert "app.js?v=20260906-9" in index.text
+    assert "app.js?v=20260906-10" in index.text
     assert "const formElement = event.currentTarget" in script.text
     assert "const form = new FormData(formElement)" in script.text
     assert "formElement.reset()" in script.text

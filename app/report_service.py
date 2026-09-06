@@ -84,21 +84,23 @@ class S3MonthlyReportService:
             region_name=settings.SSO_REGION,
         )
 
-    async def load_latest(self) -> MonthlyReport:
+    async def load_latest(self, period: str | None = None) -> MonthlyReport:
         if not self.settings.REPORT_BUCKET:
             return MonthlyReport(
                 status="unconfigured",
+                period=period,
                 message="尚未配置 Kiro User Activity Reports 的 S3 桶。",
             )
         try:
-            return await asyncio.to_thread(self._load_latest_sync)
+            return await asyncio.to_thread(self._load_latest_sync, period)
         except Exception:
             return MonthlyReport(
                 status="unavailable",
+                period=period,
                 message="当前无法读取 Kiro User Activity Reports，请稍后刷新。",
             )
 
-    def _load_latest_sync(self) -> MonthlyReport:
+    def _load_latest_sync(self, period: str | None = None) -> MonthlyReport:
         account_id = str(self.session.client("sts").get_caller_identity()["Account"])
         prefix = self.settings.REPORT_PREFIX.strip("/")
         base_prefix = (
@@ -110,16 +112,28 @@ class S3MonthlyReportService:
             return MonthlyReport(
                 status="no_data",
                 account_id=account_id,
-                message="当前账号尚无可用的 Kiro User Activity Reports。",
+                period=period,
+                message=(
+                    f"{period} 暂无可用的 Kiro User Activity Reports。"
+                    if period
+                    else "当前账号尚无可用的 Kiro User Activity Reports。"
+                ),
             )
 
-        latest_period = max(item[1][:7] for item in objects)
-        selected = [item for item in objects if item[1].startswith(latest_period)]
+        selected_period = period or max(item[1][:7] for item in objects)
+        selected = [item for item in objects if item[1].startswith(selected_period)]
+        if not selected:
+            return MonthlyReport(
+                status="no_data",
+                account_id=account_id,
+                period=selected_period,
+                message=f"{selected_period} 暂无可用的 Kiro User Activity Reports。",
+            )
         report = MonthlyReport(
             status="ok",
             message="",
             account_id=account_id,
-            period=latest_period,
+            period=selected_period,
             overage_price_per_credit=self.settings.REPORT_OVERAGE_PRICE_PER_CREDIT,
         )
         parsed_objects = 0
@@ -142,8 +156,8 @@ class S3MonthlyReportService:
             return MonthlyReport(
                 status="no_data",
                 account_id=account_id,
-                period=latest_period,
-                message=f"{latest_period} 暂无可解析的 Kiro 用户用量数据。",
+                period=selected_period,
+                message=f"{selected_period} 暂无可解析的 Kiro 用户用量数据。",
             )
         report.source_objects = parsed_objects
         report.users.sort(key=lambda user: user.credits, reverse=True)

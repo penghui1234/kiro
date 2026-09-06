@@ -505,8 +505,12 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/api/reports/monthly/view", include_in_schema=False)
-    async def monthly_report_view(_admin: Admin, report_service: ReportService):
-        report = await report_service.load_latest()
+    async def monthly_report_view(
+        _admin: Admin,
+        report_service: ReportService,
+        month: Annotated[str | None, Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None,
+    ):
+        report = await report_service.load_latest(month)
         return HTMLResponse(render_monthly_report(report))
 
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -8,6 +8,7 @@ import ast
 import getpass
 import hashlib
 import json
+import locale
 import os
 import re
 import secrets
@@ -27,6 +28,20 @@ MIN_PYTHON = (3, 12)
 def fail(message: str) -> None:
     print(f"错误：{message}", file=sys.stderr)
     raise SystemExit(1)
+
+
+def decode_subprocess_output(value: bytes | str | None) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    encodings = ("utf-8", locale.getpreferredencoding(False), "gb18030")
+    for encoding in dict.fromkeys(encodings):
+        try:
+            return value.decode(encoding)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return value.decode("utf-8", errors="replace")
 
 
 def venv_python() -> Path:
@@ -238,7 +253,7 @@ Set-Acl -LiteralPath $Path -AclObject $acl
         principal,
     ]
     try:
-        result = subprocess.run(command, text=True, capture_output=True)
+        result = subprocess.run(command, capture_output=True)
     except OSError as exc:
         fail(f"无法运行 PowerShell 收紧 .env ACL：{exc}")
     if result.returncode != 0:
@@ -333,15 +348,16 @@ def validate_runtime(python: Path) -> None:
         result = subprocess.run(
             [str(python), "-c", code],
             cwd=ROOT,
-            text=True,
             capture_output=True,
         )
     except OSError as exc:
         fail(f"无法运行虚拟环境 Python：{exc}")
+    stdout = decode_subprocess_output(result.stdout)
+    stderr = decode_subprocess_output(result.stderr)
     if result.returncode != 0:
-        details = result.stderr.strip().splitlines()
+        details = stderr.strip().splitlines()
         fail(f"应用配置校验失败：{details[-1] if details else '未知错误'}")
-    print(result.stdout.strip())
+    print(stdout.strip())
 
 
 def check_aws_read_only(python: Path) -> None:
@@ -376,16 +392,17 @@ asyncio.run(main())
         result = subprocess.run(
             [str(python), "-c", code],
             cwd=ROOT,
-            text=True,
             capture_output=True,
         )
     except OSError as exc:
         fail(f"无法运行虚拟环境 Python：{exc}")
+    stdout = decode_subprocess_output(result.stdout)
+    stderr = decode_subprocess_output(result.stderr)
     if result.returncode != 0:
-        details = result.stderr.strip().splitlines()
+        details = stderr.strip().splitlines()
         fail(f"AWS 只读检查失败：{details[-1] if details else '未知错误'}")
     try:
-        data = json.loads(result.stdout.strip().splitlines()[-1])
+        data = json.loads(stdout.strip().splitlines()[-1])
     except (IndexError, json.JSONDecodeError):
         fail("AWS 只读检查返回了无法解析的结果")
     if data.get("report") == "unavailable":
