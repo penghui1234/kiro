@@ -13,6 +13,17 @@ def test_health_and_static_page(client: TestClient) -> None:
     assert "Kiro 管理台" in response.text
 
 
+def test_login_script_keeps_form_reference_across_await(client: TestClient) -> None:
+    index = client.get("/")
+    script = client.get("/static/app.js")
+
+    assert "app.js?v=20260906-8" in index.text
+    assert "const formElement = event.currentTarget" in script.text
+    assert "const form = new FormData(formElement)" in script.text
+    assert "formElement.reset()" in script.text
+    assert "event.currentTarget.reset()" not in script.text
+
+
 def test_authentication_cookie_flow(client: TestClient) -> None:
     assert client.get("/api/session").status_code == 401
     bad_login = client.post("/api/login", json={"username": "admin", "password": "bad"})

@@ -389,14 +389,15 @@ document.addEventListener('click', async (event) => {
 $('#login-form').addEventListener('submit', async (event) => {
   event.preventDefault()
   const button = event.submitter
-  const form = new FormData(event.currentTarget)
+  const formElement = event.currentTarget
+  const form = new FormData(formElement)
   setBusy(button, true)
   $('#login-error').textContent = ''
   try {
     const data = await api('/api/login', {
       method: 'POST', body: JSON.stringify({ username: form.get('username'), password: form.get('password') }),
     })
-    event.currentTarget.reset()
+    formElement.reset()
     showApp(data.username)
   } catch (error) { $('#login-error').textContent = error.message } finally { setBusy(button, false) }
 })
