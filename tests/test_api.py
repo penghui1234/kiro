@@ -17,11 +17,31 @@ def test_login_script_keeps_form_reference_across_await(client: TestClient) -> N
     index = client.get("/")
     script = client.get("/static/app.js")
 
-    assert "app.js?v=20260906-8" in index.text
+    assert "app.js?v=20260906-9" in index.text
     assert "const formElement = event.currentTarget" in script.text
     assert "const form = new FormData(formElement)" in script.text
     assert "formElement.reset()" in script.text
     assert "event.currentTarget.reset()" not in script.text
+
+
+def test_views_cache_after_first_load_and_show_update_times(client: TestClient) -> None:
+    index = client.get("/").text
+    script = client.get("/static/app.js").text
+
+    for view in ("overview", "users", "subscriptions"):
+        assert f'id="{view}-updated-at"' in index
+        assert f"if (state.loaded.{view} && !force) return" in script
+        assert f"state.loaded.{view} = true" in script
+        assert f"markUpdated('{view}')" in script
+
+    assert "async function loadOverview({ force = false } = {})" in script
+    assert "async function loadUsers({ force = false } = {})" in script
+    assert "async function loadSubscriptions({ force = false } = {})" in script
+    assert "loadMonthlyReport({ force })" in script
+    assert "cache: 'no-store'" in script
+    assert "() => loadOverview({ force: true })" in script
+    assert "() => loadUsers({ force: true })" in script
+    assert "() => loadSubscriptions({ force: true })" in script
 
 
 def test_authentication_cookie_flow(client: TestClient) -> None:

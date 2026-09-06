@@ -5,7 +5,14 @@ const PLANS = [
   ['KIRO_ENTERPRISE_PRO_POWER', 'Power'],
 ]
 
-const state = { users: [], subscriptions: [], reportLoaded: false, reportLoading: null }
+const state = {
+  users: [],
+  subscriptions: [],
+  loaded: { overview: false, users: false, subscriptions: false },
+  updatedAt: { overview: null, users: null, subscriptions: null },
+  reportLoaded: false,
+  reportLoading: null,
+}
 const $ = (selector) => document.querySelector(selector)
 const $$ = (selector) => [...document.querySelectorAll(selector)]
 
@@ -18,6 +25,7 @@ function escapeHtml(value) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     credentials: 'same-origin',
+    cache: 'no-store',
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   })
@@ -60,7 +68,22 @@ function setBusy(button, busy) {
   button.textContent = busy ? '处理中…' : button.dataset.label
 }
 
-async function loadMonthlyReport() {
+function markUpdated(view) {
+  const now = new Date()
+  state.updatedAt[view] = now
+  const formatted = new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).format(now)
+  $(`#${view}-updated-at`).textContent = `最后更新：${formatted}`
+}
+
+function invalidateView(view) {
+  state.loaded[view] = false
+}
+
+async function loadMonthlyReport({ force = false } = {}) {
+  if (state.reportLoaded && !force) return
   if (state.reportLoading) return state.reportLoading
   state.reportLoading = (async () => {
     const response = await fetch('/api/reports/monthly/view', {
@@ -82,19 +105,23 @@ async function loadMonthlyReport() {
   }
 }
 
-async function loadOverview() {
+async function loadOverview({ force = false } = {}) {
+  if (state.loaded.overview && !force) return
   const button = $('#refresh-overview')
   setBusy(button, true)
   try {
-    const [data] = await Promise.all([api('/api/overview'), loadMonthlyReport()])
+    const [data] = await Promise.all([api('/api/overview'), loadMonthlyReport({ force })])
     $('#stat-users').textContent = data.users
     $('#stat-subscriptions').textContent = data.subscriptions
     $('#stat-active').textContent = data.active
     $('#stat-pending').textContent = data.pending
+    state.loaded.overview = true
+    markUpdated('overview')
   } catch (error) { showError(error) } finally { setBusy(button, false) }
 }
 
-async function loadUsers() {
+async function loadUsers({ force = false } = {}) {
+  if (state.loaded.users && !force) return
   const button = $('#refresh-users')
   setBusy(button, true)
   try {
@@ -113,6 +140,8 @@ async function loadUsers() {
           <button class="danger" data-delete-user="${escapeHtml(user.user_id)}" data-user-name="${escapeHtml(user.user_name)}">删除</button>
         </div></td>
       </tr>`).join('') : '<tr><td colspan="4">没有匹配用户</td></tr>'
+    state.loaded.users = true
+    markUpdated('users')
   } catch (error) { showError(error) } finally { setBusy(button, false) }
 }
 
@@ -148,7 +177,8 @@ async function exportUsersCsv() {
   } catch (error) { showError(error) } finally { setBusy(button, false) }
 }
 
-async function loadSubscriptions() {
+async function loadSubscriptions({ force = false } = {}) {
+  if (state.loaded.subscriptions && !force) return
   const button = $('#refresh-subscriptions')
   setBusy(button, true)
   try {
@@ -167,6 +197,8 @@ async function loadSubscriptions() {
           <button class="danger" data-cancel-subscription="${escapeHtml(item.principal_id)}">取消</button>
         </td>
       </tr>`).join('') : '<tr><td colspan="6">暂无订阅</td></tr>'
+    state.loaded.subscriptions = true
+    markUpdated('subscriptions')
   } catch (error) { showError(error) } finally { setBusy(button, false) }
 }
 
@@ -338,7 +370,8 @@ async function changeSubscription(principalId, currentPlan) {
     await api(`/api/subscriptions/${encodeURIComponent(principalId)}`, {
       method: 'PATCH', body: JSON.stringify({ subscription_type: selected[0] }),
     })
-    await loadSubscriptions()
+    invalidateView('overview')
+    await loadSubscriptions({ force: true })
   } catch (error) { showError(error) }
 }
 
@@ -372,7 +405,9 @@ document.addEventListener('click', async (event) => {
     try {
       const data = await api(`/api/users/${encodeURIComponent(button.dataset.deleteUser)}?confirm_user_name=${encodeURIComponent(confirmation)}`, { method: 'DELETE' })
       alert(data.message)
-      await loadUsers()
+      invalidateView('overview')
+      invalidateView('subscriptions')
+      await loadUsers({ force: true })
     } catch (error) { showError(error) } finally { setBusy(button, false) }
   }
   if (button.dataset.changeSubscription) changeSubscription(button.dataset.changeSubscription, button.dataset.currentPlan)
@@ -381,7 +416,8 @@ document.addEventListener('click', async (event) => {
     setBusy(button, true)
     try {
       await api(`/api/subscriptions/${encodeURIComponent(button.dataset.cancelSubscription)}`, { method: 'DELETE' })
-      await loadSubscriptions()
+      invalidateView('overview')
+      await loadSubscriptions({ force: true })
     } catch (error) { showError(error) } finally { setBusy(button, false) }
   }
 })
@@ -405,11 +441,13 @@ $('#login-form').addEventListener('submit', async (event) => {
 $('#logout-button').addEventListener('click', async () => {
   try { await api('/api/logout', { method: 'POST' }) } finally { showLogin() }
 })
-$('#refresh-overview').addEventListener('click', loadOverview)
-$('#refresh-users').addEventListener('click', loadUsers)
-$('#refresh-subscriptions').addEventListener('click', loadSubscriptions)
-$('#search-users').addEventListener('click', loadUsers)
-$('#user-search').addEventListener('keydown', (event) => { if (event.key === 'Enter') loadUsers() })
+$('#refresh-overview').addEventListener('click', () => loadOverview({ force: true }))
+$('#refresh-users').addEventListener('click', () => loadUsers({ force: true }))
+$('#refresh-subscriptions').addEventListener('click', () => loadSubscriptions({ force: true }))
+$('#search-users').addEventListener('click', () => loadUsers({ force: true }))
+$('#user-search').addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') loadUsers({ force: true })
+})
 $('#batch-users-button').addEventListener('click', openBatchUsersDialog)
 $('#export-users-button').addEventListener('click', exportUsersCsv)
 $('#close-batch-users').addEventListener('click', () => $('#batch-users-dialog').close())
@@ -443,7 +481,10 @@ $('#batch-users-form').addEventListener('submit', async (event) => {
     const lines = data.items.map((item) => `${labels[item.status] || item.status} | ${item.user_name} | ${item.message}`)
     $('#batch-users-result').textContent = `共 ${data.total} 位：创建 ${data.created}，跳过 ${data.skipped}，失败 ${data.failed}\n${lines.join('\n')}`
     $('#batch-users-result').classList.remove('hidden')
-    if (data.created) await loadUsers()
+    if (data.created) {
+      invalidateView('overview')
+      await loadUsers({ force: true })
+    }
   } catch (error) { showError(error) } finally { setBusy(button, false) }
 })
 $('#assign-button').addEventListener('click', openAssignDialog)
@@ -485,7 +526,10 @@ $('#assign-form').addEventListener('submit', async (event) => {
     const lines = data.items.map((item) => `${item.success ? '成功' : '失败'} | ${usersById.get(item.principal_id) || item.principal_id} | ${item.message}`)
     $('#assign-result').textContent = `共 ${data.total} 位：成功 ${data.succeeded}，失败 ${data.failed}\n${lines.join('\n')}`
     $('#assign-result').classList.remove('hidden')
-    if (data.succeeded) await loadSubscriptions()
+    if (data.succeeded) {
+      invalidateView('overview')
+      await loadSubscriptions({ force: true })
+    }
   } catch (error) { $('#assign-error').textContent = error.message } finally { setBusy(button, false) }
 })
 
