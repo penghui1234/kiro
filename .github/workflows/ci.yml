@@ -7,15 +7,19 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r requirements-dev.txt
-      - run: ruff check app tests
-      - run: ruff format --check app tests
-      - run: PYTHONPATH=. pytest -q
-      - run: docker build -t kiro-simple:ci .
+      - run: python -m pip install -r requirements-dev.txt
+      - run: python -m ruff check app tests setup.py
+      - run: python -m ruff format --check app tests setup.py
+      - run: python -m pytest -q
+      - if: matrix.os == 'ubuntu-latest'
+        run: docker build -t kiro-simple:ci .
