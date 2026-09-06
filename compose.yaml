@@ -1,0 +1,17 @@
+services:
+  web:
+    build: .
+    env_file: .env
+    environment:
+      AWS_SHARED_CREDENTIALS_FILE: /home/app/.aws/credentials
+      AWS_CONFIG_FILE: /home/app/.aws/config
+    ports:
+      - "0.0.0.0:8080:8000"
+    volumes:
+      - "${AWS_CREDENTIALS_DIR:-/home/ec2-user/.aws}:/home/app/.aws:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready')\""]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    restart: unless-stopped

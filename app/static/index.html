@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Kiro 管理台</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/highcharts@12.1.2/highcharts.js" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/highcharts@12.1.2/modules/accessibility.js" defer></script>
+  <script src="/static/monthly-report.js?v=20260906-2" defer></script>
+  <script src="/static/app.js?v=20260906-7" defer></script>
+</head>
+<body>
+  <section id="login-view" class="center-card hidden">
+    <form id="login-form" class="card login-card">
+      <div class="brand">K</div>
+      <h1>Kiro 管理台</h1>
+      <p class="muted">单实例 · 实时 AWS 数据</p>
+      <label>用户名<input name="username" autocomplete="username" required></label>
+      <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+      <button type="submit" class="primary">登录</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </section>
+
+  <div id="app-view" class="hidden">
+    <header class="app-header">
+      <div><strong>Kiro 管理台</strong><span class="badge">Simple</span></div>
+      <div><span id="current-user"></span><button id="logout-button" class="ghost">退出</button></div>
+    </header>
+    <div class="shell">
+      <nav>
+        <button class="nav-button active" data-view="overview">概览</button>
+        <button class="nav-button" data-view="users">用户</button>
+        <button class="nav-button" data-view="subscriptions">订阅</button>
+      </nav>
+      <main>
+        <div id="global-error" class="alert hidden"></div>
+
+        <section id="view-overview" class="view">
+          <div class="title-row"><div><h2>概览</h2><p>实时 AWS 状态与月度用量报告集中展示。</p></div><button id="refresh-overview">刷新</button></div>
+          <div class="section-kicker">当前 AWS 实时状态</div>
+          <div class="stats">
+            <article><span>用户</span><strong id="stat-users">-</strong><small>Identity Center</small></article>
+            <article><span>全部订阅</span><strong id="stat-subscriptions">-</strong><small>Kiro subscriptions</small></article>
+            <article><span>已激活</span><strong id="stat-active">-</strong><small>Active</small></article>
+            <article><span>待激活</span><strong id="stat-pending">-</strong><small>Pending</small></article>
+          </div>
+          <div class="overview-divider"></div>
+          <div id="monthly-report-host"><div class="report-loading">正在读取当前账号月度用量报告…</div></div>
+        </section>
+
+        <section id="view-users" class="view hidden">
+          <div class="title-row"><div><h2>Identity Center 用户</h2><p id="users-count">-</p></div><div><button id="batch-users-button" class="primary">批量导入用户</button><button id="export-users-button">导出 CSV</button><button id="refresh-users">刷新</button></div></div>
+          <div class="toolbar"><input id="user-search" placeholder="搜索用户名、显示名称或邮箱"><button id="search-users">搜索</button></div>
+          <div class="table-wrap"><table><thead><tr><th>用户名</th><th>显示名称</th><th>邮箱</th><th>操作</th></tr></thead><tbody id="users-body"></tbody></table></div>
+        </section>
+
+        <section id="view-subscriptions" class="view hidden">
+          <div class="title-row"><div><h2>Kiro 订阅</h2><p id="subscriptions-count">-</p></div><div><button id="assign-button" class="primary">分配订阅</button><button id="refresh-subscriptions">刷新</button></div></div>
+          <div class="table-wrap"><table><thead><tr><th>用户</th><th>邮箱</th><th>套餐</th><th>状态</th><th>来源</th><th>操作</th></tr></thead><tbody id="subscriptions-body"></tbody></table></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog id="batch-users-dialog">
+    <form id="batch-users-form" method="dialog" class="dialog-form batch-users-form">
+      <h3>批量导入 Identity Center 用户</h3>
+      <p class="dialog-hint">支持 CSV 或制表符分隔，一次最多 100 人。字段顺序：用户名称、显示名称、邮箱；可包含中英文表头。</p>
+      <div class="batch-tools">
+        <label class="file-label">选择 CSV 文件<input id="batch-users-file" type="file" accept=".csv,text/csv,text/tab-separated-values"></label>
+        <button id="download-users-template" type="button">下载 CSV 模板</button>
+      </div>
+      <label>导入内容
+        <textarea id="batch-users-input" rows="10" placeholder="用户名称,显示名称,邮箱&#10;alice,Alice Zhang,alice@example.com" required></textarea>
+      </label>
+      <p id="batch-users-preview" class="batch-preview">尚未读取用户</p>
+      <pre id="batch-users-result" class="batch-result hidden"></pre>
+      <div class="dialog-actions"><button id="close-batch-users" type="button">关闭</button><button type="submit" class="primary">确认导入</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="assign-dialog">
+    <form id="assign-form" method="dialog" class="dialog-form assign-form">
+      <h3>批量分配订阅</h3>
+      <p class="dialog-hint">选择 1–100 位用户并统一分配一个套餐。已有 active 或 pending 订阅的用户不可重复选择。</p>
+      <label>搜索用户<input id="assign-user-search" placeholder="搜索用户名、显示名称或邮箱"></label>
+      <div class="assign-list-actions"><button id="select-all-assignable" type="button">全选可分配</button><button id="clear-assigned-selection" type="button">清空</button><span id="assign-selected-count">已选择 0 位</span></div>
+      <div id="assign-user-list" class="assign-user-list"></div>
+      <label>套餐<select id="assign-plan" required></select></label>
+      <p id="assign-error" class="error"></p>
+      <pre id="assign-result" class="batch-result hidden"></pre>
+      <div class="dialog-actions"><button type="button" data-close-dialog>取消</button><button type="submit" class="primary">确认分配</button></div>
+    </form>
+  </dialog>
+</body>
+</html>
