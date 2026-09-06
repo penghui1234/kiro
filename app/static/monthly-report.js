@@ -1,7 +1,93 @@
 'use strict'
 
+function nextPaint() {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+}
+
+function safeReportPeriod(value) {
+  const fallback = new Date().toISOString().slice(0, 7)
+  const safe = String(value || fallback)
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, '-')
+    .replace(/^\.+|[. ]+$/g, '')
+    .slice(0, 40)
+  return safe || fallback
+}
+
+async function exportMonthlyReport(event) {
+  const button = event.currentTarget
+  const report = button.closest('.monthly-report')
+  if (!report) return
+
+  const originalLabel = button.textContent
+  button.disabled = true
+  button.textContent = '导出中…'
+  let blobUrl
+  try {
+    await nextPaint()
+    const response = await fetch('/static/style.css', { cache: 'no-store' })
+    if (!response.ok) throw new Error(`样式读取失败 (${response.status})`)
+    const css = await response.text()
+    const clone = report.cloneNode(true)
+
+    clone.querySelectorAll([
+      '[data-export-monthly-report]',
+      '#monthly-report-data',
+      '.highcharts-a11y-proxy-container-before',
+      '.highcharts-a11y-proxy-container-after',
+      '.highcharts-announcer-container',
+      '.highcharts-exit-anchor',
+      '.highcharts-tooltip-container',
+    ].join(',')).forEach((node) => node.remove())
+    clone.querySelectorAll('th.sortable').forEach((header) => {
+      header.classList.remove('sortable', 'asc', 'desc')
+      delete header.dataset.sortDir
+    })
+
+    const exportDocument = document.implementation.createHTMLDocument('Kiro 企业版月度用量报告')
+    exportDocument.documentElement.lang = 'zh-CN'
+    const charset = exportDocument.createElement('meta')
+    charset.setAttribute('charset', 'utf-8')
+    exportDocument.head.prepend(charset)
+    const viewport = exportDocument.createElement('meta')
+    viewport.name = 'viewport'
+    viewport.content = 'width=device-width,initial-scale=1'
+    exportDocument.head.appendChild(viewport)
+    const style = exportDocument.createElement('style')
+    style.textContent = css.replace(/<\/style/gi, '<\\/style')
+    exportDocument.head.appendChild(style)
+    exportDocument.body.className = 'report-export-page'
+    exportDocument.body.appendChild(exportDocument.importNode(clone, true))
+
+    const html = `<!doctype html>\n${exportDocument.documentElement.outerHTML}`
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    blobUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = `kiro-enterprise-monthly-usage-${safeReportPeriod(report.dataset.period)}.html`
+    link.hidden = true
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } catch (error) {
+    console.error('月报 HTML 导出失败', error)
+    window.alert(`导出失败：${error.message || error}`)
+  } finally {
+    if (blobUrl) setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    button.disabled = false
+    button.textContent = originalLabel
+  }
+}
+
 window.initMonthlyReport = function () {
-  const dataNode = document.querySelector('#monthly-report-data')
+  const report = document.querySelector('.monthly-report')
+  const exportButton = report?.querySelector('[data-export-monthly-report]')
+  if (exportButton && exportButton.dataset.exportBound !== 'true') {
+    exportButton.dataset.exportBound = 'true'
+    exportButton.addEventListener('click', exportMonthlyReport)
+  }
+  const dataNode = report?.querySelector('#monthly-report-data')
   if (!dataNode) return
   if (typeof Highcharts === 'undefined') {
     document.querySelectorAll('.monthly-report .chart-300, .monthly-report .chart-420')

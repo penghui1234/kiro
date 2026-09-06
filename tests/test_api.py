@@ -145,7 +145,7 @@ def test_monthly_report_is_private_and_embedded(
     assert 'id="monthly-report-host"' in index.text
     assert "正在读取当前账号月度用量报告" in index.text
     assert "cdn.jsdelivr.net/npm/highcharts@12.1.2" in index.text
-    assert "/static/monthly-report.js?v=20260906-2" in index.text
+    assert "/static/monthly-report.js?v=20260906-3" in index.text
     assert "2026-06" not in index.text
     assert "948860674776" not in index.text
     assert "@ke.com" not in index.text
