@@ -221,7 +221,7 @@ def test_monthly_report_is_private_and_embedded(
     assert fake_report_service.calls == 2
 
 
-def test_batch_create_users_supports_partial_results(
+def test_batch_create_users_sends_verification_and_password_reset_emails(
     logged_in_client: TestClient, fake_gateway: FakeGateway
 ) -> None:
     fake_gateway.create_user_failures.add("existing")
@@ -245,8 +245,77 @@ def test_batch_create_users_supports_partial_results(
     assert response.status_code == 200
     assert response.json()["succeeded"] == 1
     assert response.json()["failed"] == 1
+    assert response.json()["verification_failed"] == 0
+    assert response.json()["password_reset_failed"] == 0
+    assert response.json()["items"][0]["message"] == (
+        "创建成功，验证邮件已发送；密码重置邮件已发送"
+    )
     assert response.json()["items"][1]["message"] == "用户已存在"
     assert fake_gateway.created_users == [("new-user", "New User", "new@example.com")]
+    assert fake_gateway.verified_user_ids == ["created-1"]
+    assert fake_gateway.reset_user_ids == ["created-1"]
+
+
+def test_batch_create_users_continues_password_reset_when_verification_fails(
+    logged_in_client: TestClient, fake_gateway: FakeGateway
+) -> None:
+    fake_gateway.verify_email_failures.add("created-1")
+    response = logged_in_client.post(
+        "/api/users/batch",
+        json={
+            "users": [
+                {
+                    "user_name": "new-user",
+                    "display_name": "New User",
+                    "email": "new@example.com",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["created"] == 1
+    assert response.json()["failed"] == 0
+    assert response.json()["verification_failed"] == 1
+    assert response.json()["password_reset_failed"] == 0
+    assert response.json()["items"][0]["status"] == "created"
+    assert response.json()["items"][0]["verification_email_sent"] is False
+    assert response.json()["items"][0]["password_reset_email_sent"] is True
+    assert response.json()["items"][0]["message"] == (
+        "创建成功，验证邮件发送失败：验证邮件发送失败；密码重置邮件已发送"
+    )
+    assert fake_gateway.created_users == [("new-user", "New User", "new@example.com")]
+    assert fake_gateway.verified_user_ids == []
+    assert fake_gateway.reset_user_ids == ["created-1"]
+
+
+def test_batch_create_users_reports_password_reset_email_failure(
+    logged_in_client: TestClient, fake_gateway: FakeGateway
+) -> None:
+    fake_gateway.reset_password_failures.add("created-1")
+    response = logged_in_client.post(
+        "/api/users/batch",
+        json={
+            "users": [
+                {
+                    "user_name": "new-user",
+                    "display_name": "New User",
+                    "email": "new@example.com",
+                }
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["created"] == 1
+    assert response.json()["password_reset_failed"] == 1
+    assert response.json()["items"][0]["verification_email_sent"] is True
+    assert response.json()["items"][0]["password_reset_email_sent"] is False
+    assert response.json()["items"][0]["message"] == (
+        "创建成功，验证邮件已发送；密码重置邮件发送失败：密码重置邮件发送失败"
+    )
+    assert fake_gateway.verified_user_ids == ["created-1"]
+    assert fake_gateway.reset_user_ids == []
 
 
 def test_batch_create_users_rejects_invalid_or_duplicate_input(

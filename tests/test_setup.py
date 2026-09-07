@@ -191,7 +191,9 @@ def test_secure_env_file_rebuilds_protected_windows_acl(
     ]
     assert "$acl.SetAccessRuleProtection($true, $false)" in command[4]
     assert "NT AUTHORITY\\SYSTEM" in command[4]
-    assert command[-2:] == [str(env_file), "TESTDOMAIN\\test-user"]
+    assert f"$Path = '{env_file}'" in command[4]
+    assert "$Principal = 'TESTDOMAIN\\test-user'" in command[4]
+    assert len(command) == 5
 
 
 def test_aws_check_rejects_unavailable_configured_report(
@@ -290,12 +292,15 @@ def test_windows_acl_contains_only_current_user_and_system(tmp_path: Path) -> No
 
     local_setup.secure_env_file(env_file)
 
+    escaped_env_file = str(env_file).replace("'", "''")
     script = (
-        "(Get-Acl -LiteralPath $args[0]).Access | "
+        "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new(); "
+        f"(Get-Acl -LiteralPath '{escaped_env_file}').Access | "
         "ForEach-Object { $_.IdentityReference.Value } | ConvertTo-Json -Compress"
     )
     result = subprocess.run(
-        ["powershell.exe", "-NoProfile", "-Command", script, str(env_file)],
+        ["powershell.exe", "-NoProfile", "-Command", script],
+        encoding="utf-8",
         text=True,
         capture_output=True,
         check=True,

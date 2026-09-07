@@ -535,14 +535,14 @@ $('#batch-users-form').addEventListener('submit', async (event) => {
   let users
   try { users = parseBatchUsers($('#batch-users-input').value) }
   catch (error) { return showError(error) }
-  if (!confirm(`确认导入 ${users.length} 位用户？已存在且用户名/邮箱匹配的用户会自动跳过；成功项不会因其他行失败而回滚。`)) return
+  if (!confirm(`确认导入 ${users.length} 位用户？新建成功后将自动发送验证邮件和密码重置邮件；已存在且用户名/邮箱匹配的用户会自动跳过；成功项不会因其他行失败而回滚。`)) return
   const button = event.submitter
   setBusy(button, true)
   try {
     const data = await api('/api/users/batch', { method: 'POST', body: JSON.stringify({ users }) })
     const labels = { created: '创建', skipped: '跳过', ready: '可创建', failed: '失败' }
     const lines = data.items.map((item) => `${labels[item.status] || item.status} | ${item.user_name} | ${item.message}`)
-    $('#batch-users-result').textContent = `共 ${data.total} 位：创建 ${data.created}，跳过 ${data.skipped}，失败 ${data.failed}\n${lines.join('\n')}`
+    $('#batch-users-result').textContent = `共 ${data.total} 位：创建 ${data.created}，跳过 ${data.skipped}，失败 ${data.failed}，验证邮件失败 ${data.verification_failed || 0}，密码重置邮件失败 ${data.password_reset_failed || 0}\n${lines.join('\n')}`
     $('#batch-users-result').classList.remove('hidden')
     if (data.created) {
       invalidateView('overview')

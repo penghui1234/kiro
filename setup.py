@@ -227,10 +227,18 @@ def secure_env_file(path: Path = ENV_FILE) -> None:
     username = os.environ.get("USERNAME") or getpass.getuser()
     domain = os.environ.get("USERDOMAIN")
     principal = f"{domain}\\{username}" if domain else username
-    powershell = r"""
-param([string]$Path, [string]$Principal)
-$acl = [System.Security.AccessControl.FileSecurity]::new()
+    escaped_path = str(path).replace("'", "''")
+    escaped_principal = principal.replace("'", "''")
+    powershell = (
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$Path = '{escaped_path}'\n"
+        f"$Principal = '{escaped_principal}'\n"
+        r"""
+$acl = Get-Acl -LiteralPath $Path
 $acl.SetAccessRuleProtection($true, $false)
+foreach ($rule in @($acl.Access)) {
+    [void]$acl.RemoveAccessRuleAll($rule)
+}
 $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
 $type = [System.Security.AccessControl.AccessControlType]::Allow
 $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
@@ -243,14 +251,13 @@ foreach ($identity in @($Principal, 'NT AUTHORITY\SYSTEM')) {
 }
 Set-Acl -LiteralPath $Path -AclObject $acl
 """
+    )
     command = [
         "powershell.exe",
         "-NoProfile",
         "-NonInteractive",
         "-Command",
         powershell,
-        str(path),
-        principal,
     ]
     try:
         result = subprocess.run(command, capture_output=True)

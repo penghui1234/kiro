@@ -15,6 +15,7 @@ os.environ.update(
         "INSTANCE_ARN": "arn:aws:sso:::instance/ssoins-1234567890abcdef",
         "SSO_REGION": "us-east-1",
         "KIRO_REGION": "us-east-1",
+        "COOKIE_SECURE": "false",
     }
 )
 
@@ -31,6 +32,8 @@ class FakeGateway:
         self.deleted_user_ids: list[str] = []
         self.created_users: list[tuple[str, str, str]] = []
         self.create_user_failures: set[str] = set()
+        self.verify_email_failures: set[str] = set()
+        self.reset_password_failures: set[str] = set()
         self.assign_subscription_failures: set[str] = set()
         self.actions: list[tuple[str, str, str | None]] = []
         self.users = [
@@ -71,9 +74,13 @@ class FakeGateway:
         return f"created-{len(self.created_users)}"
 
     async def verify_email(self, user_id: str) -> None:
+        if user_id in self.verify_email_failures:
+            raise AWSGatewayError("email.verify", "验证邮件发送失败")
         self.verified_user_ids.append(user_id)
 
     async def reset_password(self, user_id: str) -> None:
+        if user_id in self.reset_password_failures:
+            raise AWSGatewayError("password.reset", "密码重置邮件发送失败")
         self.reset_user_ids.append(user_id)
 
     async def delete_user(self, user_id: str) -> None:
