@@ -151,18 +151,40 @@ class AWSGateway:
         name_parts = display_name.split(maxsplit=1)
         given_name = name_parts[0]
         family_name = name_parts[1] if len(name_parts) > 1 else name_parts[0]
-        response = await self._boto_call(
-            "identitystore",
-            "create_user",
-            IdentityStoreId=self.settings.IDENTITY_STORE_ID,
-            UserName=user_name,
-            DisplayName=display_name,
-            Name={"GivenName": given_name, "FamilyName": family_name},
-            Emails=[{"Value": email, "Type": "work", "Primary": True}],
+        response = await self._sigv4_post(
+            url=(f"https://identitystore.{self.settings.SSO_REGION}.amazonaws.com/identitystore/"),
+            target="AWSIdentityStoreService.CreateUser",
+            payload={
+                "IdentityStoreId": self.settings.IDENTITY_STORE_ID,
+                "UserName": user_name,
+                "UserAttributes": {
+                    "emails": {
+                        "ComplexListValue": [
+                            {
+                                "value": {"StringValue": email},
+                                "type": {"StringValue": "work"},
+                                "primary": {"BooleanValue": True},
+                            }
+                        ]
+                    },
+                    "name": {
+                        "ComplexValue": {
+                            "givenName": {"StringValue": given_name},
+                            "familyName": {"StringValue": family_name},
+                        }
+                    },
+                    "displayName": {"StringValue": display_name},
+                },
+                "Active": True,
+                "PasswordMode": "EMAIL",
+            },
+            service="identitystore",
+            region=self.settings.SSO_REGION,
         )
-        user_id = str(response.get("UserId") or "")
+        user = response.get("User")
+        user_id = str(user.get("UserId") or "") if isinstance(user, dict) else ""
         if not user_id:
-            raise AWSGatewayError("identitystore.create_user", "AWS 响应缺少 UserId")
+            raise AWSGatewayError("AWSIdentityStoreService.CreateUser", "AWS 响应缺少 User.UserId")
         return user_id
 
     async def verify_email(self, user_id: str) -> None:

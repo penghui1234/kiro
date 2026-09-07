@@ -234,11 +234,8 @@ def secure_env_file(path: Path = ENV_FILE) -> None:
         f"$Path = '{escaped_path}'\n"
         f"$Principal = '{escaped_principal}'\n"
         r"""
-$acl = Get-Acl -LiteralPath $Path
+$acl = [System.Security.AccessControl.FileSecurity]::new()
 $acl.SetAccessRuleProtection($true, $false)
-foreach ($rule in @($acl.Access)) {
-    [void]$acl.RemoveAccessRuleAll($rule)
-}
 $rights = [System.Security.AccessControl.FileSystemRights]::FullControl
 $type = [System.Security.AccessControl.AccessControlType]::Allow
 $inheritance = [System.Security.AccessControl.InheritanceFlags]::None
@@ -249,7 +246,8 @@ foreach ($identity in @($Principal, 'NT AUTHORITY\SYSTEM')) {
     )
     $acl.AddAccessRule($rule)
 }
-Set-Acl -LiteralPath $Path -AclObject $acl
+[System.IO.File]::SetAccessControl($Path, $acl)
+exit 0
 """
     )
     command = [
@@ -260,11 +258,21 @@ Set-Acl -LiteralPath $Path -AclObject $acl
         powershell,
     ]
     try:
-        result = subprocess.run(command, capture_output=True)
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
     except OSError as exc:
         fail(f"无法运行 PowerShell 收紧 .env ACL：{exc}")
     if result.returncode != 0:
-        fail("无法收紧 .env ACL，请确认当前账号有权修改该文件")
+        detail = "\n".join(
+            output.strip() for output in (result.stderr, result.stdout) if output and output.strip()
+        )
+        suffix = f"\nPowerShell 输出：{detail}" if detail else ""
+        fail(f"无法收紧 .env ACL，请确认当前账号有权修改该文件{suffix}")
 
 
 def write_env_file(config: dict[str, str], path: Path = ENV_FILE) -> None:

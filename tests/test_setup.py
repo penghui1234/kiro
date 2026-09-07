@@ -189,11 +189,32 @@ def test_secure_env_file_rebuilds_protected_windows_acl(
         "-NonInteractive",
         "-Command",
     ]
+    assert "[System.Security.AccessControl.FileSecurity]::new()" in command[4]
     assert "$acl.SetAccessRuleProtection($true, $false)" in command[4]
+    assert "[System.IO.File]::SetAccessControl($Path, $acl)" in command[4]
     assert "NT AUTHORITY\\SYSTEM" in command[4]
     assert f"$Path = '{env_file}'" in command[4]
     assert "$Principal = 'TESTDOMAIN\\test-user'" in command[4]
+    assert "exit 0" in command[4]
     assert len(command) == 5
+
+
+def test_secure_env_file_reports_powershell_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("ADMIN_PASSWORD=secret\n")
+
+    def fake_run(command, **_kwargs):
+        return subprocess.CompletedProcess(command, 1, "", "Access is denied.")
+
+    monkeypatch.setattr(local_setup.os, "name", "nt")
+    monkeypatch.setattr(local_setup.subprocess, "run", fake_run)
+
+    with pytest.raises(SystemExit):
+        local_setup.secure_env_file(env_file)
+
+    assert "Access is denied." in capsys.readouterr().err
 
 
 def test_aws_check_rejects_unavailable_configured_report(

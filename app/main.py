@@ -301,29 +301,13 @@ def create_app() -> FastAPI:
                 continue
             try:
                 user_id = await gateway.create_user(item.user_name, item.display_name, item.email)
-                try:
-                    await gateway.verify_email(user_id)
-                    verification_email_sent = True
-                    verification_message = "验证邮件已发送"
-                except AWSGatewayError as exc:
-                    verification_email_sent = False
-                    verification_message = f"验证邮件发送失败：{exc.message}"
-                try:
-                    await gateway.reset_password(user_id)
-                    password_reset_email_sent = True
-                    password_reset_message = "密码重置邮件已发送"
-                except AWSGatewayError as exc:
-                    password_reset_email_sent = False
-                    password_reset_message = f"密码重置邮件发送失败：{exc.message}"
                 results.append(
                     {
                         "user_name": item.user_name,
                         "status": "created",
                         "success": True,
                         "user_id": user_id,
-                        "verification_email_sent": verification_email_sent,
-                        "password_reset_email_sent": password_reset_email_sent,
-                        "message": f"创建成功，{verification_message}；{password_reset_message}",
+                        "message": "创建成功，已请求 AWS 发送密码设置邀请邮件（链接最长有效 7 天）",
                     }
                 )
             except AWSGatewayError as exc:
@@ -346,10 +330,6 @@ def create_app() -> FastAPI:
         skipped = sum(item["status"] == "skipped" for item in results)
         ready = sum(item["status"] == "ready" for item in results)
         failed = sum(item["status"] == "failed" for item in results)
-        verification_failed = sum(item.get("verification_email_sent") is False for item in results)
-        password_reset_failed = sum(
-            item.get("password_reset_email_sent") is False for item in results
-        )
         return {
             "total": len(results),
             "succeeded": created + skipped + ready,
@@ -357,8 +337,6 @@ def create_app() -> FastAPI:
             "skipped": skipped,
             "ready": ready,
             "failed": failed,
-            "verification_failed": verification_failed,
-            "password_reset_failed": password_reset_failed,
             "items": results,
         }
 
