@@ -104,6 +104,53 @@ async def test_password_and_subscription_request_contracts(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_create_user_request_contract(monkeypatch) -> None:
+    gateway = AWSGateway(gateway_settings())
+    calls: list[dict[str, Any]] = []
+
+    async def fake_post(**kwargs: Any) -> dict[str, Any]:
+        calls.append(kwargs)
+        return {"User": {"UserId": "created-user"}}
+
+    monkeypatch.setattr(gateway, "_sigv4_post", fake_post)
+    user_id = await gateway.create_user("new-user", "New User", "new@example.com")
+
+    assert user_id == "created-user"
+    assert calls == [
+        {
+            "url": "https://identitystore.us-east-1.amazonaws.com/identitystore/",
+            "target": "AWSIdentityStoreService.CreateUser",
+            "payload": {
+                "IdentityStoreId": "d-1234567890",
+                "UserName": "new-user",
+                "UserAttributes": {
+                    "emails": {
+                        "ComplexListValue": [
+                            {
+                                "value": {"StringValue": "new@example.com"},
+                                "type": {"StringValue": "work"},
+                                "primary": {"BooleanValue": True},
+                            }
+                        ]
+                    },
+                    "name": {
+                        "ComplexValue": {
+                            "givenName": {"StringValue": "New"},
+                            "familyName": {"StringValue": "User"},
+                        }
+                    },
+                    "displayName": {"StringValue": "New User"},
+                },
+                "Active": True,
+                "PasswordMode": "EMAIL",
+            },
+            "service": "identitystore",
+            "region": "us-east-1",
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_assignment_retries_legacy_plan_on_validation_error(monkeypatch) -> None:
     gateway = AWSGateway(gateway_settings())
     calls: list[dict[str, Any]] = []
@@ -181,34 +228,6 @@ async def test_assignment_conflict_is_mapped_to_state_error(monkeypatch) -> None
     assert caught.value.status_code == 409
     assert "资源当前状态不允许" in caught.value.message
     assert len(calls) == 1
-
-
-@pytest.mark.asyncio
-async def test_create_user_request_contract(monkeypatch) -> None:
-    gateway = AWSGateway(gateway_settings())
-    calls: list[tuple[str, str, dict[str, Any]]] = []
-
-    async def fake_boto_call(service: str, method: str, **kwargs: Any) -> dict[str, Any]:
-        calls.append((service, method, kwargs))
-        return {"UserId": "created-user-id"}
-
-    monkeypatch.setattr(gateway, "_boto_call", fake_boto_call)
-    user_id = await gateway.create_user("alice", "Alice Example", "alice@example.com")
-
-    assert user_id == "created-user-id"
-    assert calls == [
-        (
-            "identitystore",
-            "create_user",
-            {
-                "IdentityStoreId": "d-1234567890",
-                "UserName": "alice",
-                "DisplayName": "Alice Example",
-                "Name": {"GivenName": "Alice", "FamilyName": "Example"},
-                "Emails": [{"Value": "alice@example.com", "Type": "work", "Primary": True}],
-            },
-        )
-    ]
 
 
 @pytest.mark.asyncio
